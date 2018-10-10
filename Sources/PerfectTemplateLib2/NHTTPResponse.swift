@@ -33,7 +33,6 @@ class NHTTPResponse: HTTPResponse {
 	}
 	var headerStore = Array<(HTTPResponseHeader.Name, String)>()
 	var wroteHeaders = false
-	var contentLengthSet = false
 	var handlers: IndexingIterator<[RequestHandler]>?
 	var body: ByteBuffer {
 		if let real = bodyMaybe {
@@ -44,7 +43,6 @@ class NHTTPResponse: HTTPResponse {
 		return b
 	}
 	var bodyMaybe: ByteBuffer? = nil
-	var isKeepAlive: Bool { return nrequest.head.isKeepAlive }
 	var headers: AnyIterator<(HTTPResponseHeader.Name, String)> {
 		var g = self.headerStore.makeIterator()
 		return AnyIterator<(HTTPResponseHeader.Name, String)> {
@@ -66,9 +64,6 @@ class NHTTPResponse: HTTPResponse {
 	@discardableResult
 	func addHeader(_ name: HTTPResponseHeader.Name, value: String) -> Self {
 		headerStore.append((name, value))
-		if case .contentLength = name {
-			contentLengthSet = true
-		}
 		return self
 	}
 	@discardableResult
@@ -121,12 +116,7 @@ class NHTTPResponse: HTTPResponse {
 		
 	func responseHead() -> HTTPResponseHead {
 		wroteHeaders = true
-		if isKeepAlive {
-			addHeader(.connection, value: "keep-alive")
-		}
-		if isStreaming {
-			addHeader(.transferEncoding, value: "chunked")
-		} else if !contentLengthSet {
+		if !isStreaming {
 			addHeader(.contentLength, value: "\(body.readableBytes)")
 		}
 		let req = nrequest.head
@@ -143,7 +133,7 @@ class NHTTPResponse: HTTPResponse {
 	func completed() {
 		let p: EventLoopPromise<Void> = ctx.eventLoop.newPromise()
 		p.futureResult.whenComplete {
-			self.completeResponse(self.ctx, trailers: nil, promise: self.ctx.eventLoop.newPromise())
+			self.completeResponse(self.ctx, trailers: nil, promise: nil)
 		}
 		push(p)
 	}
@@ -156,13 +146,15 @@ class NHTTPResponse: HTTPResponse {
 		}
 	}
 	
-	private func completeResponse(_ ctx: ChannelHandlerContext, trailers: HTTPHeaders?, promise: EventLoopPromise<Void>) {
-		if !isKeepAlive {
-			promise.futureResult.whenComplete { ctx.close(promise: nil) }
+	private func completeResponse(_ ctx: ChannelHandlerContext, trailers: HTTPHeaders?, promise: EventLoopPromise<Void>?) {
+		let keepAlive = nrequest.head.isKeepAlive
+		let promise = keepAlive ? promise : (promise ?? ctx.eventLoop.newPromise())
+		if !keepAlive {
+			promise!.futureResult.whenComplete {
+				ctx.close(promise: nil)
+			}
 		}
-		promise.futureResult.whenComplete {
-			self.nioHandler.response = nil
-		}
+		nioHandler.response = nil
 		ctx.writeAndFlush(nioHandler.wrapOutboundOut(.end(trailers)), promise: promise)
 	}
 }

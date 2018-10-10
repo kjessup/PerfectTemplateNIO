@@ -21,8 +21,40 @@ routes.add(uri: "/2048") {
 }
 routes.add(uri: "/4096") {
 	req, resp in
-	resp.setBody(string: big4096).completed()
+	resp.appendBody(string: big4096).completed()
 }
+routes.add(uri: "/push/8192") {
+	req, resp in
+	var sent = 0
+	resp.isStreaming = true
+	func send() {
+		if sent >= 8192 {
+			resp.completed()
+		} else {
+			resp.setBody(string: big1024).push {
+				b in
+				if b {
+					sent += 1024
+					send()
+				}
+			}
+		}
+	}
+	send()
+}
+routes.add(uri: "/args") {
+	req, resp in
+	resp.setBody(string:
+		"<html><body>" +
+			req.params().map { "\($0.0) = \($0.1)" }.joined(separator: "<br>\n") +
+		"</body></html>")
+		.completed()
+}
+routes.add(uri: "/sleep") {
+	req, resp in
+	
+}
+
 
 let s = HTTPServer(routes)
 let b = try s.bind(port: 8080)

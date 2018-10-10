@@ -52,8 +52,16 @@ final class HTTPHandler: ChannelInboundHandler {
 			handlers.last?(request, response)
 		} else {
 			response.status = .notFound
-			response.appendBody(string: "The file \(request.path) was not found.")
+			response.setBody(string: "The file \(request.path) was not found.")
 			response.completed()
+		}
+	}
+	
+	func userInboundEventTriggered(ctx: ChannelHandlerContext, event: Any) {
+		if event is IdleStateHandler.IdleStateEvent {
+			_ = ctx.close()
+		} else {
+			ctx.fireUserInboundEventTriggered(event)
 		}
 	}
 }
@@ -72,6 +80,9 @@ struct BoundHTTPServer: BoundServer {
 			.childChannelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
 			.childChannelInitializer { channel in
 				channel.pipeline.configureHTTPServerPipeline(withErrorHandling: true)
+//				.then {
+//					channel.pipeline.add(handler: IdleStateHandler(readTimeout: TimeAmount.minutes(1)))
+//				}
 				.then {
 					channel.pipeline.add(handler: HTTPHandler(routeNavigator: routeNavigator))
 				}

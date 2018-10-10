@@ -91,6 +91,7 @@ class NHTTPRequest: PerfectHTTP.HTTPRequest {
 		self.path = "/" + c.joined(separator: "/")
 		self.pathComponents = c
 		self.queryString = q
+		
 	}
 	
 	func header(_ named: HTTPRequestHeader.Name) -> String? {
